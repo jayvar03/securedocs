@@ -17,8 +17,9 @@ class Settings(BaseSettings):
             "your-random-jwt-secret-here",
             "your-random-secret-key",
             "your-random-secret-key-at-least-32-chars-long",
+            "change-me-generate-with-secrets-token-urlsafe",
         }
-        if v in placeholders or "your-random" in v.lower():
+        if v in placeholders or "your-random" in v.lower() or "change-me" in v.lower():
             raise ValueError("JWT_SECRET must not be a placeholder from .env.example")
         if len(v) < 32:
             raise ValueError("JWT_SECRET must be at least 32 characters long")

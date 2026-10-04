@@ -19,7 +19,6 @@ def test_user_update_schema_rejects_extra_fields():
 
 def test_self_demotion_rejected():
     mock_conn = MagicMock()
-    # Target is self (id=1, admin)
     mock_conn.execute.return_value.fetchone.return_value = {
         "id": 1,
         "tenant_id": 10,
@@ -38,11 +37,11 @@ def test_self_demotion_rejected():
 
 def test_last_admin_demotion_rejected():
     mock_conn = MagicMock()
-    # Target is admin 2, caller is admin 1, but total admins count is 1
-    mock_conn.execute.return_value.fetchone.side_effect = [
-        {"id": 2, "tenant_id": 10, "email": "other@example.com", "role": "admin", "department": None},
-        {"c": 1},  # count of admins is 1
-    ]
+    # fetchone returns target user; fetchall returns locked admin rows for tenant (only 1 admin)
+    mock_conn.execute.return_value.fetchone.return_value = {
+        "id": 2, "tenant_id": 10, "email": "other@example.com", "role": "admin", "department": None
+    }
+    mock_conn.execute.return_value.fetchall.return_value = [{"id": 2}]
     with patch("app.routers.users.get_conn") as mock_get_conn:
         mock_get_conn.return_value.__enter__.return_value = mock_conn
         admin = {"id": 1, "tenant_id": 10, "role": "admin"}
@@ -72,10 +71,11 @@ def test_self_deletion_rejected():
 
 def test_last_admin_deletion_rejected():
     mock_conn = MagicMock()
-    mock_conn.execute.return_value.fetchone.side_effect = [
-        {"id": 2, "tenant_id": 10, "email": "other@example.com", "role": "admin", "department": None},
-        {"c": 1},  # count of admins is 1
-    ]
+    mock_conn.execute.return_value.fetchone.return_value = {
+        "id": 2, "tenant_id": 10, "email": "other@example.com", "role": "admin", "department": None
+    }
+    # fetchall returns locked admin rows (only 1 admin remaining)
+    mock_conn.execute.return_value.fetchall.return_value = [{"id": 2}]
     with patch("app.routers.users.get_conn") as mock_get_conn:
         mock_get_conn.return_value.__enter__.return_value = mock_conn
         admin = {"id": 1, "tenant_id": 10, "role": "admin"}
@@ -94,3 +94,37 @@ def test_user_not_found_or_different_tenant():
         with pytest.raises(HTTPException) as exc:
             delete_user(user_id=999, admin=admin)
         assert exc.value.status_code == 404
+
+
+def test_update_user_department_clearing_vs_omitted():
+    mock_conn = MagicMock()
+    mock_conn.execute.return_value.fetchone.side_effect = [
+        # Target user currently in "Sales"
+        {"id": 2, "tenant_id": 10, "email": "user2@example.com", "role": "employee", "department": "Sales"},
+        # Updated user return row
+        {"id": 2, "tenant_id": 10, "email": "user2@example.com", "role": "employee", "department": None},
+    ]
+
+    with patch("app.routers.users.get_conn") as mock_get_conn:
+        mock_get_conn.return_value.__enter__.return_value = mock_conn
+        admin = {"id": 1, "tenant_id": 10, "role": "admin"}
+
+        # 1. Explicitly sending department: None clears it
+        body_clear = UserUpdateIn.model_validate({"department": None})
+        update_user(user_id=2, body=body_clear, admin=admin)
+
+        # Check what was passed to UPDATE
+        update_sql, update_params = mock_conn.execute.call_args_list[-1][0]
+        assert "UPDATE users" in update_sql
+        # update_params: (new_role, new_dept, user_id, tenant_id)
+        assert update_params[1] is None
+
+        # 2. Omitted department keeps existing department ("Sales")
+        mock_conn.execute.return_value.fetchone.side_effect = [
+            {"id": 2, "tenant_id": 10, "email": "user2@example.com", "role": "employee", "department": "Sales"},
+            {"id": 2, "tenant_id": 10, "email": "user2@example.com", "role": "manager", "department": "Sales"},
+        ]
+        body_omit = UserUpdateIn.model_validate({"role": "manager"})
+        update_user(user_id=2, body=body_omit, admin=admin)
+        update_sql, update_params = mock_conn.execute.call_args_list[-1][0]
+        assert update_params[1] == "Sales"

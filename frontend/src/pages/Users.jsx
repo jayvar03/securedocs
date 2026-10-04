@@ -116,7 +116,7 @@ export default function Users() {
                       <select
                         value={u.role}
                         onChange={(e) => changeRole(u.id, e.target.value)}
-                        className="rounded border border-rule bg-input px-2 py-1 text-xs text-ink"
+                        className="rounded border border-rule bg-panel px-2 py-1 text-xs text-ink"
                         disabled={isSelf && u.role === 'admin'}
                       >
                         <option value="employee">employee</option>

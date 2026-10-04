@@ -52,19 +52,22 @@ def update_user(user_id: int, body: UserUpdateIn, admin: dict = Depends(require_
         if target is None:
             raise HTTPException(404, "User not found")
 
-        if body.role is not None and body.role != target["role"]:
+        if "role" in body.model_fields_set and body.role is not None and body.role != target["role"]:
             if target["id"] == admin["id"]:
                 raise HTTPException(400, "You cannot demote yourself from admin")
             if target["role"] == "admin":
-                admin_count = conn.execute(
-                    "SELECT count(*) AS c FROM users WHERE tenant_id = %s AND role = 'admin'",
+                admin_rows = conn.execute(
+                    "SELECT id FROM users WHERE tenant_id = %s AND role = 'admin' FOR UPDATE",
                     (admin["tenant_id"],),
-                ).fetchone()["c"]
-                if admin_count <= 1:
+                ).fetchall()
+                if len(admin_rows) <= 1:
                     raise HTTPException(400, "Cannot remove or demote the last admin of a tenant")
 
-        new_role = body.role if body.role is not None else target["role"]
-        new_dept = body.department if body.department is not None else target["department"]
+        new_role = body.role if ("role" in body.model_fields_set and body.role is not None) else target["role"]
+        if "department" in body.model_fields_set:
+            new_dept = (body.department.strip() or None) if body.department else None
+        else:
+            new_dept = target["department"]
 
         row = conn.execute(
             """UPDATE users SET role = %s, department = %s
@@ -90,11 +93,11 @@ def delete_user(user_id: int, admin: dict = Depends(require_role("admin"))):
             raise HTTPException(400, "You cannot delete your own account")
 
         if target["role"] == "admin":
-            admin_count = conn.execute(
-                "SELECT count(*) AS c FROM users WHERE tenant_id = %s AND role = 'admin'",
+            admin_rows = conn.execute(
+                "SELECT id FROM users WHERE tenant_id = %s AND role = 'admin' FOR UPDATE",
                 (admin["tenant_id"],),
-            ).fetchone()["c"]
-            if admin_count <= 1:
+            ).fetchall()
+            if len(admin_rows) <= 1:
                 raise HTTPException(400, "Cannot remove the last admin of a tenant")
 
         conn.execute(
