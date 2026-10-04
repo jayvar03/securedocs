@@ -24,7 +24,7 @@ Companies upload internal documents, and employees can ask questions and chat wi
 A simple overview of how a user's question is securely processed from start to finish:
 
 ```mermaid
-flowchart TD
+flowchart LR
     User[User in Browser]
     Frontend[Frontend<br/>React + Vite + Tailwind CSS]
     Backend[Backend API<br/>FastAPI]
