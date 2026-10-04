@@ -129,7 +129,7 @@ JWT_SECRET=your-random-secret-key-at-least-32-chars-long
 GROQ_API_KEY=gsk_your_groq_api_key_here
 GROQ_MODEL=openai/gpt-oss-120b
 MIN_SIMILARITY=0.25
-MIN_KEYWORD_SIMILARITY=0.10
+MIN_KEYWORD_SIMILARITY=0.10 # If you have an existing local .env file, add this setting (default 0.10)
 CORS_ORIGINS=http://localhost:5173 # In production, set to your deployed frontend URL (e.g. https://your-app.vercel.app)
 ```
 
@@ -172,6 +172,10 @@ python -m eval.leak_test --no-llm
 python -m eval.run_eval
 ```
 
+### Latest results
+Leak test: PASS, 0 leaks across 150 adversarial queries (retrieval-only, --no-llm)
+Retrieval eval: hit rate 11/11 at MIN_SIMILARITY=0.25, correct abstain 2/2
+
 ---
 
 ## Project Structure
@@ -180,19 +184,18 @@ python -m eval.run_eval
 securedocs/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py          # FastAPI application & middleware
+│   │   ├── main.py          # FastAPI application, CORS & /health endpoint
 │   │   ├── config.py        # Environment settings (MIN_SIMILARITY, MIN_KEYWORD_SIMILARITY)
 │   │   ├── db.py            # Psycopg connection pool
 │   │   ├── deps.py          # Auth middleware & token verification
 │   │   ├── roles.py         # Role hierarchy definitions
 │   │   ├── schema.sql       # PostgreSQL DDL, HNSW & FTS indexes
 │   │   ├── routers/
-│   │   │   ├── auth.py      # /auth (login, register, me)
-│   │   │   ├── chat.py      # /chat (RAG query endpoint)
-│   │   │   ├── documents.py # /documents (upload, list, delete)
-│   │   │   ├── users.py     # /api/users (list, create, PATCH role/dept, DELETE)
-│   │   │   ├── audit.py     # /api/audit (audit log inspection)
-│   │   │   └── health.py    # /health (deployment healthcheck)
+│   │   │   ├── auth.py      # /api/auth (POST register-tenant, POST login)
+│   │   │   ├── chat.py      # /api/chat (POST chat RAG query endpoint)
+│   │   │   ├── documents.py # /api/documents (POST upload, GET list, PATCH /{id}/access, DELETE /{id})
+│   │   │   ├── users.py     # /api/users (GET me, POST create, GET list, PATCH /{id}, DELETE /{id})
+│   │   │   └── audit.py     # /api/audit-logs (GET list audit logs)
 │   │   └── services/        # chunker, embedder, extract, ingest, llm, retriever
 │   ├── scripts/
 │   │   ├── check_integrity.py # Integrity check between chunks and parent docs
@@ -211,8 +214,6 @@ securedocs/
 │   │   ├── api.js           # Central API client
 │   │   └── auth.jsx         # Auth context & state
 │   └── package.json
-├── docs/
-│   └── ARCHITECTURE.md      # Detailed system architecture, data model, & threat model
 ├── render.yaml              # Cloud deployment blueprint
 └── README.md                # Project documentation
 ```
