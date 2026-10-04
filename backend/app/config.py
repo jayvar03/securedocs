@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     groq_model: str = "openai/gpt-oss-120b"
     max_upload_mb: int = 10
     min_similarity: float = 0.25
-    cors_origins: str = "http://localhost:5173"
+    cors_origins: str = "*"
 
     @property
     def cors_origin_list(self) -> list[str]:
