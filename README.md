@@ -39,7 +39,7 @@ flowchart TD
     Backend -->|5. Runs SQL search filtered by Tenant & Allowed Roles| Database
     Database -->|6. Returns only authorized document chunks| Backend
     Backend -->|7. Passes authorized context passages + question| GroqLLM
-    GroqLLM -->|8. Generates answer grounded with [1], [2] citations| Backend
+    GroqLLM -->|8. Generates answer grounded with 1, 2 citations| Backend
     Backend -->|9. Returns verified answer and source metadata| Frontend
     Frontend -->|10. Displays answer with clickable citation chips| User
 ```
