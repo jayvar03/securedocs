@@ -1,9 +1,9 @@
 import psycopg
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 
 from app.db import get_conn
 from app.deps import get_current_user, require_role
-from app.schemas import UserCreateIn, UserOut
+from app.schemas import UserCreateIn, UserOut, UserUpdateIn
 from app.security import hash_password
 
 router = APIRouter(prefix="/api/users", tags=["users"])
@@ -39,3 +39,66 @@ def list_users(admin: dict = Depends(require_role("admin"))):
                FROM users WHERE tenant_id = %s ORDER BY created_at, id""",
             (admin["tenant_id"],),
         ).fetchall()
+
+
+@router.patch("/{user_id}", response_model=UserOut)
+def update_user(user_id: int, body: UserUpdateIn, admin: dict = Depends(require_role("admin"))):
+    with get_conn() as conn:
+        target = conn.execute(
+            """SELECT id, tenant_id, email, role, department
+               FROM users WHERE id = %s AND tenant_id = %s""",
+            (user_id, admin["tenant_id"]),
+        ).fetchone()
+        if target is None:
+            raise HTTPException(404, "User not found")
+
+        if body.role is not None and body.role != target["role"]:
+            if target["id"] == admin["id"]:
+                raise HTTPException(400, "You cannot demote yourself from admin")
+            if target["role"] == "admin":
+                admin_count = conn.execute(
+                    "SELECT count(*) AS c FROM users WHERE tenant_id = %s AND role = 'admin'",
+                    (admin["tenant_id"],),
+                ).fetchone()["c"]
+                if admin_count <= 1:
+                    raise HTTPException(400, "Cannot remove or demote the last admin of a tenant")
+
+        new_role = body.role if body.role is not None else target["role"]
+        new_dept = body.department if body.department is not None else target["department"]
+
+        row = conn.execute(
+            """UPDATE users SET role = %s, department = %s
+               WHERE id = %s AND tenant_id = %s
+               RETURNING id, tenant_id, email, role, department""",
+            (new_role, new_dept, user_id, admin["tenant_id"]),
+        ).fetchone()
+        return row
+
+
+@router.delete("/{user_id}", status_code=204)
+def delete_user(user_id: int, admin: dict = Depends(require_role("admin"))):
+    with get_conn() as conn:
+        target = conn.execute(
+            """SELECT id, tenant_id, email, role, department
+               FROM users WHERE id = %s AND tenant_id = %s""",
+            (user_id, admin["tenant_id"]),
+        ).fetchone()
+        if target is None:
+            raise HTTPException(404, "User not found")
+
+        if target["id"] == admin["id"]:
+            raise HTTPException(400, "You cannot delete your own account")
+
+        if target["role"] == "admin":
+            admin_count = conn.execute(
+                "SELECT count(*) AS c FROM users WHERE tenant_id = %s AND role = 'admin'",
+                (admin["tenant_id"],),
+            ).fetchone()["c"]
+            if admin_count <= 1:
+                raise HTTPException(400, "Cannot remove the last admin of a tenant")
+
+        conn.execute(
+            "DELETE FROM users WHERE id = %s AND tenant_id = %s",
+            (user_id, admin["tenant_id"]),
+        )
+    return Response(status_code=204)

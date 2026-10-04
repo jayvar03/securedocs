@@ -20,5 +20,7 @@ services:
         value: openai/gpt-oss-120b
       - key: MIN_SIMILARITY
         value: "0.25"
+      - key: MIN_KEYWORD_SIMILARITY
+        value: "0.10"
       - key: CORS_ORIGINS
         sync: false

@@ -28,8 +28,7 @@ app.state.limiter = limiter
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_origin_regex=r"^https?://.*",
+    allow_origins=settings.cors_origin_list,
     allow_methods=["*"],
     allow_headers=["*"],
 )

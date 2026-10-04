@@ -60,21 +60,33 @@ def _vector_search(conn, tenant_id: int, role: str, qvec, limit: int):
     ).fetchall()
 
 
-def _text_search(conn, tenant_id: int, role: str, question: str, limit: int) -> list[int]:
+def _text_search(conn, tenant_id: int, role: str, question: str, qvec, limit: int):
     tsq = build_tsquery(question)
     if not tsq:
         return []
-    rows = conn.execute(
-        """SELECT c.id
+    return conn.execute(
+        """SELECT c.id, 1 - (c.embedding <=> %(q)s) AS similarity
            FROM chunks c, to_tsquery('english', %(tsq)s) AS query
            WHERE c.tenant_id = %(tenant)s 
              AND %(role)s = ANY(c.allowed_roles) 
              AND c.tsv @@ query
            ORDER BY ts_rank(c.tsv, query) DESC
            LIMIT %(limit)s""",
-        {"tsq": tsq, "tenant": tenant_id, "role": role, "limit": limit},
+        {"tsq": tsq, "q": qvec, "tenant": tenant_id, "role": role, "limit": limit},
     ).fetchall()
-    return [r["id"] for r in rows]
+
+
+def filter_and_fuse(
+    vector_rows: list[dict],
+    text_rows: list[dict],
+    min_similarity: float,
+    min_keyword_similarity: float,
+    top_k: int = TOP_K,
+) -> list[tuple[int, float]]:
+    """Filter candidate rows by their respective similarity thresholds, then fuse with RRF."""
+    vector_ids = [r["id"] for r in vector_rows if r["similarity"] >= min_similarity]
+    text_ids = [r["id"] for r in text_rows if r["similarity"] >= min_keyword_similarity]
+    return rrf([vector_ids, text_ids])[:top_k]
 
 
 def search(
@@ -84,18 +96,18 @@ def search(
     question: str,
     qvec,
     min_similarity: float,
+    min_keyword_similarity: float = 0.10,
     top_k: int = TOP_K,
     candidates: int = CANDIDATES,
 ) -> list[dict]:
     # 1. Vector similarity search
     vector_rows = _vector_search(conn, tenant_id, role, qvec, candidates)
-    vector_ids = [r["id"] for r in vector_rows if r["similarity"] >= min_similarity]
 
-    # 2. Full-text keyword search
-    text_ids = _text_search(conn, tenant_id, role, question, candidates)
+    # 2. Full-text keyword search (computes cosine similarity with qvec too)
+    text_rows = _text_search(conn, tenant_id, role, question, qvec, candidates)
 
-    # 3. Merge ranks with RRF
-    fused = rrf([vector_ids, text_ids])[:top_k]
+    # 3. Merge ranks with RRF after filtering by thresholds
+    fused = filter_and_fuse(vector_rows, text_rows, min_similarity, min_keyword_similarity, top_k)
     if not fused:
         return []
 

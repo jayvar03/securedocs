@@ -12,10 +12,10 @@ Companies upload internal documents, and employees can ask questions and chat wi
 - 🔐 **Role-Based Access Control (RBAC)**: Fine-grained permissions (`Admin` > `Manager` > `Employee`). Users can only query documents matching or below their access tier.
 - 🛡️ **Zero-Leak Database Filtering**: Permissions are checked in PostgreSQL queries *before* results reach the LLM. If a user lacks access, zero context is sent to the AI.
 - 🔍 **Hybrid Search (Dense + Sparse)**: Combines semantic vector search (`pgvector` cosine similarity) and keyword search (`tsvector`) fused using Reciprocal Rank Fusion (RRF).
-- ⚡ **Blazing Fast Local Embeddings**: Powered by FastEmbed ONNX (`BAAI/bge-small-en-v1.5`), generating 384-dimensional embeddings locally with zero GPU or PyTorch overhead.
+- ⚡ **Blazing Fast Local Embeddings**: Powered by FastEmbed ONNX (`sentence-transformers/all-MiniLM-L6-v2`), generating 384-dimensional embeddings locally with zero GPU or PyTorch overhead.
 - 🤖 **High-Speed Inference**: Powered by Groq's LPU running `openai/gpt-oss-120b` for near-instant, grounded answers with interactive source citations (`[1]`, `[2]`).
 - 📄 **Sentence-Aware Chunker**: Automatically slices multi-page PDFs and text files into ~800-character passages with 150-character overlap while keeping full sentences intact.
-- 🧪 **Verified Security Evals**: Built-in automated penetration suite testing 78 adversarial cross-tenant and cross-role queries to verify 0% data leakage.
+- 🧪 **Verified Security Evals**: Built-in automated penetration suite testing adversarial cross-tenant and cross-role queries to verify 0% data leakage.
 
 ---
 
@@ -24,12 +24,11 @@ Companies upload internal documents, and employees can ask questions and chat wi
 A simple overview of how a user's question is securely processed from start to finish:
 
 ```mermaid
-flowchart LR
-
+flowchart TD
     User[User in Browser]
     Frontend[Frontend<br/>React + Vite + Tailwind CSS]
     Backend[Backend API<br/>FastAPI]
-    Embedder[Embedder Engine<br/>FastEmbed ONNX]
+    Embedder[Embedder Engine<br/>FastEmbed all-MiniLM-L6-v2 384d]
     Database[(Database<br/>PostgreSQL + pgvector Neon<br/>Tenant and Role Isolation)]
     GroqLLM[LLM Inference<br/>Groq - openai/gpt-oss-120b]
 
@@ -53,13 +52,13 @@ flowchart LR
 Unlike basic RAG setups that fetch all documents and ask the LLM to "only use what the user is allowed to see" (which can be bypassed by prompt injection), SecureDocs applies access control directly in SQL:
 ```sql
 WHERE tenant_id = :current_user_tenant_id 
-  AND roles && :current_user_allowed_roles
+  AND %s = ANY(c.allowed_roles)
 ```
 If an employee asks about executive salaries, the query returns **0 rows**. The LLM never even sees the sensitive data.
 
 ### 2. Role Hierarchy
 Permissions flow top-down:
-- **Admin**: Has access to all company documents (`admin`, `manager`, `employee`).
+- **Admin**: Has access to all company documents (`admin`, `manager`, `employee`) and admin management (`/api/users`).
 - **Manager**: Has access to department and general documents (`manager`, `employee`).
 - **Employee**: Can only access general employee documents (`employee`).
 
@@ -97,7 +96,7 @@ All accounts use the password: **`Passw0rd!demo`**
 | **Frontend** | React 18, Vite, Tailwind CSS, Lucide Icons |
 | **Backend** | Python 3.11+, FastAPI, Pydantic, SlowAPI |
 | **Database** | PostgreSQL 16 (Neon Serverless) + `pgvector` & `tsvector` |
-| **Embeddings** | FastEmbed (`BAAI/bge-small-en-v1.5`, 384-dimensional ONNX) |
+| **Embeddings** | FastEmbed (`sentence-transformers/all-MiniLM-L6-v2`, 384-dimensional ONNX) |
 | **LLM** | Groq Cloud API (`openai/gpt-oss-120b`) |
 | **Auth** | JWT (HS256) with salted bcrypt password hashing |
 
@@ -126,9 +125,12 @@ copy .env.example .env        # Linux/macOS: cp .env.example .env
 Fill in your variables in `backend/.env`:
 ```env
 DATABASE_URL=postgresql://user:password@ep-xyz.neon.tech/neondb?sslmode=require
-JWT_SECRET=your-random-secret-key
+JWT_SECRET=your-random-secret-key-at-least-32-chars-long
 GROQ_API_KEY=gsk_your_groq_api_key_here
 GROQ_MODEL=openai/gpt-oss-120b
+MIN_SIMILARITY=0.25
+MIN_KEYWORD_SIMILARITY=0.10
+CORS_ORIGINS=http://localhost:5173 # In production, set to your deployed frontend URL (e.g. https://your-app.vercel.app)
 ```
 
 Run migrations and seed the multi-page corporate data:
@@ -160,10 +162,10 @@ Open `http://localhost:5173` in your browser.
 Run all verification scripts from the `backend/` directory:
 
 ```bash
-# 1. Run unit tests (auth, chunker, retriever, extractors, roles)
+# 1. Run unit tests (auth, chunker, retriever, extractors, roles, admin rules)
 pytest
 
-# 2. Run security penetration test (checks 78 adversarial prompts across roles)
+# 2. Run security penetration test (checks adversarial prompts across roles)
 python -m eval.leak_test --no-llm
 
 # 3. Run retrieval accuracy test (hit-rate & similarity threshold sweep)
@@ -179,26 +181,51 @@ securedocs/
 ├── backend/
 │   ├── app/
 │   │   ├── main.py          # FastAPI application & middleware
-│   │   ├── config.py        # Environment settings (Pydantic)
+│   │   ├── config.py        # Environment settings (MIN_SIMILARITY, MIN_KEYWORD_SIMILARITY)
 │   │   ├── db.py            # Psycopg connection pool
-│   │   ├── deps.py          # Auth middleware & user caching
+│   │   ├── deps.py          # Auth middleware & token verification
 │   │   ├── roles.py         # Role hierarchy definitions
 │   │   ├── schema.sql       # PostgreSQL DDL, HNSW & FTS indexes
-│   │   ├── routers/         # auth, chat, documents, health
+│   │   ├── routers/
+│   │   │   ├── auth.py      # /auth (login, register, me)
+│   │   │   ├── chat.py      # /chat (RAG query endpoint)
+│   │   │   ├── documents.py # /documents (upload, list, delete)
+│   │   │   ├── users.py     # /api/users (list, create, PATCH role/dept, DELETE)
+│   │   │   ├── audit.py     # /api/audit (audit log inspection)
+│   │   │   └── health.py    # /health (deployment healthcheck)
 │   │   └── services/        # chunker, embedder, extract, ingest, llm, retriever
-│   ├── scripts/             # migrate, seed, download_model
-│   ├── tests/               # Pytest unit tests
-│   └── eval/                # Security penetration & retrieval evals
+│   ├── scripts/
+│   │   ├── check_integrity.py # Integrity check between chunks and parent docs
+│   │   ├── download_model.py  # Model pre-download for build time
+│   │   ├── migrate.py         # Schema migrations
+│   │   ├── seed.py            # Database seeder
+│   │   └── seed_data.py       # Multi-page corporate demo dataset
+│   ├── tests/               # Pytest unit tests (chunker, embedder, extract, retriever, users)
+│   └── eval/
+│       ├── leak_test.py     # Adversarial penetration test
+│       └── run_eval.py      # Retrieval hit-rate and MIN_SIMILARITY sweep
 ├── frontend/
 │   ├── src/
-│   │   ├── pages/           # Login, Chat, and Documents
-│   │   ├── components/      # Nav bar & Layout wrappers
-│   │   ├── api.js           # API client
+│   │   ├── pages/           # Login, Chat, Documents, Users, Audit
+│   │   ├── components/      # Nav, Layout, Button, ConfirmDialog, Field, Spinner
+│   │   ├── api.js           # Central API client
 │   │   └── auth.jsx         # Auth context & state
 │   └── package.json
+├── docs/
+│   └── ARCHITECTURE.md      # Detailed system architecture, data model, & threat model
 ├── render.yaml              # Cloud deployment blueprint
 └── README.md                # Project documentation
 ```
+
+---
+
+## Security Checklist Before Deploying
+
+Before deploying to public production:
+1. **Rotate Secrets**: Generate new values for `JWT_SECRET` (at least 32 random characters), rotate `GROQ_API_KEY`, and use a dedicated production Neon password.
+2. **Set `CORS_ORIGINS`**: Replace `*` or `localhost` with your exact deployed frontend URL (e.g. `https://your-app.vercel.app`).
+3. **Disable Demo Mode**: Set `VITE_DEMO=false` in your frontend environment variables to remove the 1-click login panel.
+4. **Remove Demo Accounts**: Run custom seed or delete sample accounts (`admin@acme.example`, etc.) so unauthorized users cannot log in with demo credentials.
 
 ---
 

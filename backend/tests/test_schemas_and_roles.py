@@ -26,3 +26,14 @@ def test_password_limits():
         UserCreateIn(email="a@b.co", password="short", role="employee")
     with pytest.raises(ValidationError):
         UserCreateIn(email="a@b.co", password="x" * 73, role="employee")
+
+
+def test_jwt_secret_validation():
+    from app.config import Settings
+    with pytest.raises(ValidationError):
+        Settings(database_url="postgresql://fake", jwt_secret="short-key")
+    with pytest.raises(ValidationError):
+        Settings(database_url="postgresql://fake", jwt_secret="your-random-jwt-secret-here")
+    valid = Settings(database_url="postgresql://fake", jwt_secret="0123456789abcdef0123456789abcdef")
+    assert valid.jwt_secret == "0123456789abcdef0123456789abcdef"
+

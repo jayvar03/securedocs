@@ -19,7 +19,7 @@ def chat(request: Request, body: ChatIn, user: dict = Depends(get_current_user))
 
     with get_conn() as conn:
         passages = search(conn, user["tenant_id"], user["role"], body.question, qvec,
-                          settings.min_similarity)
+                          settings.min_similarity, settings.min_keyword_similarity)
         conn.execute(
             "INSERT INTO audit_logs (tenant_id, user_id, question, chunk_ids) VALUES (%s, %s, %s, %s)",
             (user["tenant_id"], user["id"], body.question, [p["chunk_id"] for p in passages]),

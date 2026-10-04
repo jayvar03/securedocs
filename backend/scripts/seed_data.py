@@ -271,7 +271,14 @@ TENANTS = [
         ],
     },
 ]
-
+# Assert that every document without 'employee' role has non-empty secrets defined
+for _t in TENANTS:
+    for _d in _t["docs"]:
+        if "employee" not in _d["roles"]:
+            assert _d.get("secrets"), (
+                f"Document {_d['title']!r} in tenant {_t['name']!r} has restricted roles "
+                f"{_d['roles']} but no secrets defined for leak testing!"
+            )
 
 def all_users():
     """Yield (email, role, tenant_name) for every seeded user."""

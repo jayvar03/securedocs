@@ -60,6 +60,13 @@ class UserCreateIn(BaseModel):
     _password = field_validator("password")(_check_password)
 
 
+class UserUpdateIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    role: Role | None = None
+    department: str | None = Field(default=None, max_length=100)
+
+
 class UserOut(BaseModel):
     id: int
     tenant_id: int
