@@ -24,24 +24,25 @@ Companies upload internal documents, and employees can ask questions and chat wi
 A simple overview of how a user's question is securely processed from start to finish:
 
 ```mermaid
-flowchart TD
-    User([👤 User in Browser])
-    Frontend[💻 Frontend<br/>React + Vite + Tailwind CSS]
-    Backend[⚡ Backend API<br/>FastAPI]
-    Embedder[🧠 Embedder Engine<br/>FastEmbed ONNX]
-    Database[(🐘 Database<br/>PostgreSQL + pgvector Neon<br/>Enforces Tenant & Role Isolation)]
-    GroqLLM[🤖 LLM Inference<br/>Groq openai/gpt-oss-120b]
+flowchart LR
+
+    User[User in Browser]
+    Frontend[Frontend<br/>React + Vite + Tailwind CSS]
+    Backend[Backend API<br/>FastAPI]
+    Embedder[Embedder Engine<br/>FastEmbed ONNX]
+    Database[(Database<br/>PostgreSQL + pgvector Neon<br/>Tenant and Role Isolation)]
+    GroqLLM[LLM Inference<br/>Groq - openai/gpt-oss-120b]
 
     User -->|1. Types question| Frontend
-    Frontend -->|2. Sends question with Bearer JWT| Backend
-    Backend -->|3. Converts question text into vector| Embedder
-    Embedder -->|4. Returns 384d embedding vector| Backend
-    Backend -->|5. Runs SQL search filtered by Tenant & Allowed Roles| Database
-    Database -->|6. Returns only authorized document chunks| Backend
-    Backend -->|7. Passes authorized context passages + question| GroqLLM
-    GroqLLM -->|8. Generates answer grounded with 1, 2 citations| Backend
-    Backend -->|9. Returns verified answer and source metadata| Frontend
-    Frontend -->|10. Displays answer with clickable citation chips| User
+    Frontend -->|2. Question + Bearer JWT| Backend
+    Backend -->|3. Convert question to vector| Embedder
+    Embedder -->|4. 384d embedding vector| Backend
+    Backend -->|5. SQL search + Tenant + Role filters| Database
+    Database -->|6. Authorized document chunks| Backend
+    Backend -->|7. Context + question| GroqLLM
+    GroqLLM -->|8. Answer + citations| Backend
+    Backend -->|9. Verified answer + sources| Frontend
+    Frontend -->|10. Display answer + citations| User
 ```
 
 ---
